@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vocal Master</string>
+    <string name="library_title">내 노래</string>
+    <string name="settings_title">설정</string>
+    <string name="scan_folder">스캔 폴더</string>
+    <string name="pick_folder">폴더 선택</string>
+    <string name="sort_order">정렬 순서</string>
+    <string name="key_up">키 올림</string>
+    <string name="key_down">키 내림</string>
+    <string name="prev">이전 곡</string>
+    <string name="next">다음 곡</string>
+    <string name="play_pause">재생 / 일시정지</string>
+    <string name="tab_list">목록</string>
+    <string name="tab_favorites">즐겨찾기</string>
+    <string name="tab_settings">설정</string>
+    <string name="search_hint">검색 (가수 - 곡명)</string>
+    <string name="score_mode">스코어 모드</string>
+    <string name="practice_mode">연습 모드</string>
+    <string name="key_config">키 설정</string>
+    <string name="favorite">즐겨찾기</string>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="white">#FFFFFFFF</color>
+    <color name="bg_dark">#FF121212</color>
+    <color name="gray_400">#FF9CA3AF</color>
+    <color name="pink_400">#FFF472B6</color>
+    <color name="pink_500">#FFEC4899</color>
+    <color name="pink_600">#FFDB2777</color>
+    <color name="pink_700">#FFBE185D</color>
+    <color name="bg_light">#FFFAFAFA</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="text_primary">#FF1A1A1A</color>
+    <color name="text_secondary">#FF6B7280</color>
+    <color name="divider">#FFE5E7EB</color>
+    <color name="star_active">#FFFFC107</color>
+</resources>
