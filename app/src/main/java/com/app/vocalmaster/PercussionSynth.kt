@@ -4,6 +4,8 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Handler
+import android.os.Looper
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
@@ -25,6 +27,7 @@ class PercussionSynth {
     enum class Instrument { TAMBOURINE, MARACA, COWBELL }
 
     private val sampleRate = 44100
+    private val releaseHandler = Handler(Looper.getMainLooper())
 
     /** 한 번 타격음 재생 (intensity 0~1). 짧은 1회성 사운드. */
     fun play(instrument: Instrument, intensity: Float) {
@@ -105,6 +108,9 @@ class PercussionSynth {
      * PCM 샘플을 일회성 AudioTrack으로 즉시 재생하고 끝나면 해제.
      * 연속 흔들기로 트랙이 한꺼번에 많이 생기면 시스템 한도에 걸려 생성/재생이
      * 실패할 수 있으므로, 그 경우 소리만 건너뛰고 크래시하지 않게 방어한다.
+     * 해제는 재생 길이에 맞춘 지연 해제로 보장한다 — MODE_STATIC의 마커 콜백은
+     * 일부 기기에서 발화하지 않아, 그것에 의존하면 트랙이 누수되어 32개 한도에
+     * 걸린 뒤로는 소리가 전혀 나지 않게 되기 때문.
      */
     private fun playPcm(samples: ShortArray) {
         val track = try {
@@ -134,14 +140,13 @@ class PercussionSynth {
                 return
             }
             track.write(samples, 0, samples.size)
-            track.setNotificationMarkerPosition(samples.size)
-            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-                override fun onMarkerReached(t: AudioTrack?) {
-                    try { t?.stop(); t?.release() } catch (_: Exception) {}
-                }
-                override fun onPeriodicNotification(t: AudioTrack?) {}
-            })
             track.play()
+            // 재생 길이 + 여유(80ms) 뒤 확정 해제 (마커 콜백 미발화 기기 대비)
+            val durationMs = (samples.size * 1000L / sampleRate) + 80L
+            releaseHandler.postDelayed({
+                try { track.stop() } catch (_: Exception) {}
+                try { track.release() } catch (_: Exception) {}
+            }, durationMs)
         } catch (e: Exception) {
             android.util.Log.w("PercussionSynth", "재생 실패", e)
             try { track.release() } catch (_: Exception) {}
