@@ -68,6 +68,12 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var stageGlow: View
     private var currentDarkness = 0f
 
+    // 뒤집어서 일시정지 (연습 모드, 가속도계)
+    private val settings by lazy { SettingsManager(this) }
+    private lateinit var flipPauseDetector: FlipPauseDetector
+    private var pausedByFlip = false
+    private var flipHintShown = false
+
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -147,6 +153,33 @@ class PlayerActivity : AppCompatActivity() {
         if (vocalPath != null) loadSong(File(vocalPath), vocalTitle)
 
         setupInstruments()
+        setupFlipPause()
+    }
+
+    /** 연습 모드: 폰을 엎어두면 일시정지, 다시 들면 이어서 재생 (가속도계) */
+    private fun setupFlipPause() {
+        flipPauseDetector = FlipPauseDetector(
+            this,
+            onFaceDown = {
+                if (player.isPlaying) {
+                    player.pause()
+                    pausedByFlip = true
+                    if (!flipHintShown) {
+                        flipHintShown = true
+                        android.widget.Toast.makeText(
+                            this, "일시정지 — 다시 들면 이어서 재생됩니다",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            },
+            onFaceUp = {
+                if (pausedByFlip) {
+                    pausedByFlip = false
+                    player.play()
+                }
+            }
+        )
     }
 
     /** 악기 토글 + 흔들기 감지 연결 */
@@ -329,12 +362,20 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         if (::shakeDetector.isInitialized) shakeDetector.start()
         if (::lightMonitor.isInitialized) lightMonitor.start()
+        // 스코어 모드는 '끊김 없이 쭉 부르기' 설계라 연습 모드에서만 사용
+        if (::flipPauseDetector.isInitialized &&
+            mode == PlayerMode.PRACTICE && settings.flipToPause
+        ) {
+            flipPauseDetector.start()
+        }
     }
 
     override fun onStop() {
         super.onStop()
         if (::shakeDetector.isInitialized) shakeDetector.stop()
         if (::lightMonitor.isInitialized) lightMonitor.stop()
+        if (::flipPauseDetector.isInitialized) flipPauseDetector.stop()
+        pausedByFlip = false // 화면 이탈 후 복귀 시 자동 재생 방지
         scoringEngine.stop()
         player.pause()
     }

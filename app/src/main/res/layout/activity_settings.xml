@@ -93,6 +93,49 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp" />
 
+        <!-- 뒤집어서 일시정지 (가속도계) -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchFlipPause"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="뒤집어서 일시정지 (연습 모드)"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="연습 중 휴대폰을 화면이 바닥을 향하게 엎어 놓으면 일시정지되고, 다시 집어 들면 이어서 재생됩니다."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <!-- 연습 환경 (온도/습도 센서) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="연습 환경"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvEnvValues"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/tvEnvAdvice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
         <!-- 전처리 웹 도구 -->
         <Button
             android:id="@+id/btnOpenWeb"

@@ -29,10 +29,16 @@ class SettingsManager(context: Context) {
         get() = prefs.getString(KEY_WEB_URL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_WEB_URL, value).apply()
 
+    /** 연습 모드에서 폰을 엎어두면 일시정지 (가속도계). 기본 켜짐. */
+    var flipToPause: Boolean
+        get() = prefs.getBoolean(KEY_FLIP_TO_PAUSE, true)
+        set(value) = prefs.edit().putBoolean(KEY_FLIP_TO_PAUSE, value).apply()
+
     companion object {
         private const val KEY_FOLDER_PATH = "folder_path"
         private const val KEY_SORT_ORDER = "sort_order"
         private const val KEY_WEB_URL = "web_url"
+        private const val KEY_FLIP_TO_PAUSE = "flip_to_pause"
 
         /** 기본 추천 경로: 내부 공용 저장소/VocalMaster */
         fun defaultFolder(): File =
