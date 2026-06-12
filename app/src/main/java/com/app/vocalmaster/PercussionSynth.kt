@@ -101,32 +101,50 @@ class PercussionSynth {
         return (clamped * 32767f).toInt().toShort()
     }
 
-    /** PCM 샘플을 일회성 AudioTrack으로 즉시 재생하고 끝나면 해제 */
+    /**
+     * PCM 샘플을 일회성 AudioTrack으로 즉시 재생하고 끝나면 해제.
+     * 연속 흔들기로 트랙이 한꺼번에 많이 생기면 시스템 한도에 걸려 생성/재생이
+     * 실패할 수 있으므로, 그 경우 소리만 건너뛰고 크래시하지 않게 방어한다.
+     */
     private fun playPcm(samples: ShortArray) {
-        val track = AudioTrack(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build(),
-            AudioFormat.Builder()
-                .setSampleRate(sampleRate)
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .build(),
-            max(samples.size * 2, AudioTrack.getMinBufferSize(
-                sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
-            )),
-            AudioTrack.MODE_STATIC,
-            AudioManager.AUDIO_SESSION_ID_GENERATE
-        )
-        track.write(samples, 0, samples.size)
-        track.setNotificationMarkerPosition(samples.size)
-        track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(t: AudioTrack?) {
-                try { t?.stop(); t?.release() } catch (_: Exception) {}
+        val track = try {
+            AudioTrack(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+                AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+                max(samples.size * 2, AudioTrack.getMinBufferSize(
+                    sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+                )),
+                AudioTrack.MODE_STATIC,
+                AudioManager.AUDIO_SESSION_ID_GENERATE
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("PercussionSynth", "AudioTrack 생성 실패", e)
+            return
+        }
+        try {
+            if (track.state != AudioTrack.STATE_INITIALIZED) {
+                track.release()
+                return
             }
-            override fun onPeriodicNotification(t: AudioTrack?) {}
-        })
-        track.play()
+            track.write(samples, 0, samples.size)
+            track.setNotificationMarkerPosition(samples.size)
+            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                override fun onMarkerReached(t: AudioTrack?) {
+                    try { t?.stop(); t?.release() } catch (_: Exception) {}
+                }
+                override fun onPeriodicNotification(t: AudioTrack?) {}
+            })
+            track.play()
+        } catch (e: Exception) {
+            android.util.Log.w("PercussionSynth", "재생 실패", e)
+            try { track.release() } catch (_: Exception) {}
+        }
     }
 }

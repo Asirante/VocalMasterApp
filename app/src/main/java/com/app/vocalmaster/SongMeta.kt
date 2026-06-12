@@ -3,13 +3,11 @@ package com.app.vocalmaster
 /**
  * 곡의 표시용 메타데이터.
  * - artist/title: 파일명에서 파싱 ("(가수) - (곡명).vocal")
- * - durationMs/avgKeyHz: meta.json 등에서 보강 (없으면 null)
+ * - duration/평균 키는 VocalSong이 meta.json에서 별도로 보강한다.
  */
 data class SongMeta(
     val artist: String,
-    val title: String,
-    val durationMs: Long? = null,
-    val avgKeyHz: Float? = null
+    val title: String
 ) {
     val displayName: String get() = "$artist - $title"
 

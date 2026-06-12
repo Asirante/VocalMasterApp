@@ -52,11 +52,15 @@ class PlayerActivity : AppCompatActivity() {
 
     private var mode: PlayerMode = PlayerMode.SCORE
     private var currentSongId: String? = null
-    private var lastScore: Int = 0
     private var resultShown = false
     private var userSeeking = false
     private var preKey: Int = 0
     private val statsStore by lazy { SongStatsStore(this) }
+
+    // 백그라운드 복귀 시 스코어 모드 재개용 상태
+    private var targetPitches: List<PitchPoint>? = null
+    private var playbackStarted = false
+    private var unpacked: UnpackedData? = null
 
     // 센서 악기 (가속도계로 흔들면 켜진 악기 소리)
     private val percussion = PercussionSynth()
@@ -220,8 +224,13 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun applyStageEffect(darkness: Float) {
         // 1) 화면 밝기: 어두울수록 밝게 (교수님 요청). 0.5~1.0 범위로.
+        //    밝은 환경에서는 강제하지 않고 시스템/사용자 설정에 맡긴다.
         val lp = window.attributes
-        lp.screenBrightness = (0.5f + 0.5f * darkness).coerceIn(0.5f, 1f)
+        lp.screenBrightness = if (darkness > 0.15f) {
+            (0.5f + 0.5f * darkness).coerceIn(0.5f, 1f)
+        } else {
+            android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
         window.attributes = lp
 
         // 2) 무대 글로우: 어두우면 은은하게 켜둠(베이스 알파), 밝으면 끔
@@ -261,27 +270,43 @@ class PlayerActivity : AppCompatActivity() {
     private fun loadSong(vocalFile: File, title: String) {
         tvSongTitle.text = title
         lifecycleScope.launch {
-            currentSongId = runCatching { VocalPackageManager.computeSongId(vocalFile) }.getOrNull()
-            val data = vocalPackageManager.extractAndLoad(vocalFile)
+            // 해싱/캐시 조회는 IO에서 (메인 스레드 디스크 I/O 방지)
+            currentSongId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { vocalPackageManager.songIdOf(vocalFile) }.getOrNull()
+            }
+            // .vocal은 외부에서 들여오는 파일 — 손상/비정상 zip이면 크래시 대신 안내 후 종료
+            val data = try {
+                vocalPackageManager.extractAndLoad(vocalFile)
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerActivity", "곡 파일 압축 해제 실패: ${vocalFile.name}", e)
+                android.widget.Toast.makeText(
+                    this@PlayerActivity, "곡 파일을 열 수 없습니다 (손상되었거나 잘못된 형식)",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                finish()
+                return@launch
+            }
+            unpacked = data
             onSongChanged()
             startEngine(data)
         }
     }
 
     private fun startEngine(data: UnpackedData) {
-        val targetPitches = VocalPackageManager.parseJson(data.pitchFile)
+        val pitches = VocalPackageManager.parseJson(data.pitchFile)
+        targetPitches = pitches
 
         readyListener?.let { player.removeListener(it) }
-        var hasStarted = false
+        playbackStarted = false
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY && !hasStarted) {
-                    hasStarted = true
+                if (state == Player.STATE_READY && !playbackStarted) {
+                    playbackStarted = true
                     val dur = player.duration.coerceAtLeast(0)
                     seekBar.max = dur.toInt()
                     tvTotalTime.text = formatTime(dur)
                     player.play()
-                    if (mode == PlayerMode.SCORE) startScoring(targetPitches)
+                    if (mode == PlayerMode.SCORE) startScoring(pitches)
                 }
                 if (state == Player.STATE_ENDED && mode == PlayerMode.SCORE && !resultShown) {
                     showResult()
@@ -304,9 +329,7 @@ class PlayerActivity : AppCompatActivity() {
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!micGranted) return
         // 점수/판정은 화면에 실시간 표시하지 않고 내부 누적만 (결과는 끝나고 표시)
-        scoringEngine.start(targetPitches) { score, _, _, _, _ ->
-            lastScore = score
-        }
+        scoringEngine.start(targetPitches) { _, _, _, _, _ -> }
     }
 
     private fun seekBy(deltaMs: Long) {
@@ -320,6 +343,7 @@ class PlayerActivity : AppCompatActivity() {
         if (preKey != 0) keyController.shiftKey(preKey) // 사전 설정 키 적용
         updateKeyLabel()
         resultShown = false
+        scoringEngine.reset() // 새 판 시작 — 누적 점수 초기화
     }
 
     private fun updateKeyLabel() {
@@ -368,6 +392,17 @@ class PlayerActivity : AppCompatActivity() {
         ) {
             flipPauseDetector.start()
         }
+
+        // onStop에서 멈춘 진행 폴링 재개
+        handler.removeCallbacks(tick)
+        handler.post(tick)
+
+        // 스코어 모드는 재생 컨트롤이 없으므로, 백그라운드 복귀 시
+        // 재생과 채점(마이크)을 자동으로 이어서 시작한다. 누적 점수는 유지됨.
+        if (mode == PlayerMode.SCORE && playbackStarted && !resultShown) {
+            player.play()
+            targetPitches?.let { startScoring(it) }
+        }
     }
 
     override fun onStop() {
@@ -376,7 +411,8 @@ class PlayerActivity : AppCompatActivity() {
         if (::lightMonitor.isInitialized) lightMonitor.stop()
         if (::flipPauseDetector.isInitialized) flipPauseDetector.stop()
         pausedByFlip = false // 화면 이탈 후 복귀 시 자동 재생 방지
-        scoringEngine.stop()
+        handler.removeCallbacks(tick) // 백그라운드 폴링 중단
+        scoringEngine.stop() // 마이크만 중단 — 누적 점수는 유지
         player.pause()
     }
 
@@ -384,12 +420,12 @@ class PlayerActivity : AppCompatActivity() {
         super.onDestroy()
         // 결과를 표시하지 않고 빠져나간 경우(중도 이탈)에도 스코어 모드면 기록
         if (mode == PlayerMode.SCORE && !resultShown) {
-            currentSongId?.let { statsStore.recordPlay(it, lastScore) }
+            currentSongId?.let { statsStore.recordPlay(it, scoringEngine.getResult().avgScore) }
         }
         handler.removeCallbacks(tick)
         playerView.player = null
         player.release()
-        vocalPackageManager.clearCache()
+        unpacked?.let { vocalPackageManager.clearExtracted(it) }
     }
 
     companion object {

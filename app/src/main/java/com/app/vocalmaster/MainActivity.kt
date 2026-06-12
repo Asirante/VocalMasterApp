@@ -133,11 +133,17 @@ class MainActivity : AppCompatActivity() {
         loadSongs()
     }
 
+    private var micPromptShown = false
+
     private fun requestMicIfNeeded() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        // 거부한 사용자에게 매 onResume마다 다시 묻지 않도록 한 번만 요청
+        if (!granted && !micPromptShown) {
+            micPromptShown = true
+            micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     private fun loadSongs() {
@@ -225,9 +231,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 val dest = vpm.importSong(uri, folder, artist, title)
                 if (favorite) {
-                    // 복사된 파일의 해시 ID로 즐겨찾기 설정
+                    // 복사된 파일의 해시 ID로 즐겨찾기 설정 (songIdOf: 캐시도 함께 채워짐)
                     val id = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        runCatching { VocalPackageManager.computeSongId(dest) }.getOrNull()
+                        runCatching { vpm.songIdOf(dest) }.getOrNull()
                     }
                     id?.let { SongStatsStore(this@MainActivity).toggleFavorite(it) }
                 }

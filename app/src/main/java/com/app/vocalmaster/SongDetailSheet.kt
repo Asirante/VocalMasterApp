@@ -60,7 +60,8 @@ class SongDetailSheet : BottomSheetDialogFragment() {
         // 해시 ID + 메타는 IO에서 (zip 읽기)
         lifecycleScope.launch {
             val (id, meta2) = withContext(Dispatchers.IO) {
-                val sid = try { VocalPackageManager.computeSongId(file) } catch (e: Exception) { null }
+                // songIdOf: 캐시 우선 — 시트를 열 때마다 비디오 전체를 해싱하지 않음
+                val sid = try { VocalPackageManager(ctx).songIdOf(file) } catch (e: Exception) { null }
                 val m = VocalPackageManager.readMeta(file)
                 Pair(sid, m)
             }

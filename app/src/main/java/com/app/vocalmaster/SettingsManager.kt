@@ -24,11 +24,6 @@ class SettingsManager(context: Context) {
         get() = SortOrder.fromKey(prefs.getString(KEY_SORT_ORDER, SortOrder.NAME_ASC.key))
         set(value) = prefs.edit().putString(KEY_SORT_ORDER, value.key).apply()
 
-    /** 전처리 웹 도구 주소 (Cloudflare 도메인 등). 비어 있으면 버튼 비활성. */
-    var webUrl: String
-        get() = prefs.getString(KEY_WEB_URL, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_WEB_URL, value).apply()
-
     /** 연습 모드에서 폰을 엎어두면 일시정지 (가속도계). 기본 켜짐. */
     var flipToPause: Boolean
         get() = prefs.getBoolean(KEY_FLIP_TO_PAUSE, true)
@@ -37,7 +32,6 @@ class SettingsManager(context: Context) {
     companion object {
         private const val KEY_FOLDER_PATH = "folder_path"
         private const val KEY_SORT_ORDER = "sort_order"
-        private const val KEY_WEB_URL = "web_url"
         private const val KEY_FLIP_TO_PAUSE = "flip_to_pause"
 
         /** 기본 추천 경로: 내부 공용 저장소/VocalMaster */

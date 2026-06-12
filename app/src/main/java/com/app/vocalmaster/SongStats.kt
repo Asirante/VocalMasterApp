@@ -33,6 +33,9 @@ class SongStatsStore(context: Context) {
 
     fun get(songId: String): SongStat = load()[songId] ?: SongStat(songId)
 
+    /** 전체 통계 맵 — 목록 스캔처럼 여러 곡을 한꺼번에 조회할 때 (곡마다 JSON 파싱 방지) */
+    fun getAll(): Map<String, SongStat> = load()
+
     fun recordPlay(songId: String, score: Int) {
         val map = load()
         val stat = map[songId] ?: SongStat(songId)

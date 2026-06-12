@@ -17,11 +17,13 @@ data class PitchPoint(val timeMs: Long, val hz: Float)
 class ScoringEngine {
 
     private var dispatcher: AudioDispatcher? = null
-    private var totalScore = 0.0
-    private var scoredCount = 0
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // 판정별 누적 카운트 (결과 화면용)
+    // 누적 점수/판정 카운트.
+    // 쓰기는 오디오 콜백 스레드 한 곳에서만 일어나고(단일 작성자),
+    // 읽기(getResult)는 메인 스레드에서 하므로 @Volatile로 가시성만 보장하면 충분.
+    @Volatile private var totalScore = 0.0
+    @Volatile private var scoredCount = 0
     @Volatile private var perfectCount = 0
     @Volatile private var greatCount = 0
     @Volatile private var goodCount = 0
@@ -139,11 +141,16 @@ class ScoringEngine {
             ?.takeIf { it > 0f } // 0Hz = 무음 구간 제외
     }
 
-    // 반드시 호출 — 메모리 릭 방지
-    // keyMultiplier는 여기서 초기화하지 않음 — KeyController.resetKey() 콜백으로 일관되게 관리
+    // 마이크 캡처만 중단. 누적 점수는 유지된다 —
+    // 백그라운드 전환 후 복귀 시 start()로 이어서 채점하고, getResult()도 stop() 후에 안전.
+    // 새 곡/새 판 시작 시에는 reset()을 별도로 호출할 것.
     fun stop() {
         dispatcher?.stop()
         dispatcher = null
+    }
+
+    /** 누적 점수/판정 카운트 초기화. 새 채점 세션(곡) 시작 전에 호출. */
+    fun reset() {
         totalScore = 0.0
         scoredCount = 0
         perfectCount = 0
