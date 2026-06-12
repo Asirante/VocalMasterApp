@@ -59,9 +59,10 @@ class ShakeDetector(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     companion object {
-        // m/s^2. 일상적 흔들기보다 큰 동작을 잡도록.
-        private const val SHAKE_THRESHOLD = 12f
-        private const val MAX_ACCEL = 30f       // 이 이상은 최대 세기로
-        private const val DEBOUNCE_MS = 120L    // 연타 방지(타악기 반복은 허용)
+        // m/s^2 (중력 제거 후 움직임 성분). 탬버린처럼 손목으로 가볍게 흔드는
+        // 동작(≈1.4g 전후)에도 반응하도록 낮춘다. 가만히 들고 있을 때(≈0)는 트리거되지 않음.
+        private const val SHAKE_THRESHOLD = 4f
+        private const val MAX_ACCEL = 16f       // 이 이상은 최대 세기로
+        private const val DEBOUNCE_MS = 100L    // 연타 방지(타악기 반복은 허용)
     }
 }
