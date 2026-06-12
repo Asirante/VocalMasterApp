@@ -8,6 +8,7 @@ import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.ToggleButton
+import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
@@ -34,19 +35,18 @@ class PlayerActivity : AppCompatActivity() {
 
     private lateinit var playerView: PlayerView
     private lateinit var tvSongTitle: TextView
-    private lateinit var tvScore: TextView
-    private lateinit var tvJudgment: TextView
     private lateinit var tvKeyLabel: TextView
     private lateinit var btnKeyUp: ImageButton
     private lateinit var btnKeyDown: ImageButton
     private lateinit var btnPlayPause: ImageButton
-    private lateinit var btnPrev: ImageButton
-    private lateinit var btnNext: ImageButton
+    private lateinit var btnPrev: android.widget.Button
+    private lateinit var btnNext: android.widget.Button
     private lateinit var seekBar: SeekBar
     private lateinit var tvCurrentTime: TextView
     private lateinit var tvTotalTime: TextView
     private lateinit var layoutSeekbar: View
     private lateinit var layoutControls: View
+    private lateinit var progressLoading: View
 
     private var readyListener: Player.Listener? = null
 
@@ -61,6 +61,7 @@ class PlayerActivity : AppCompatActivity() {
     private var targetPitches: List<PitchPoint>? = null
     private var playbackStarted = false
     private var unpacked: UnpackedData? = null
+    private var micNoticeShown = false
 
     // 센서 악기 (가속도계로 흔들면 켜진 악기 소리)
     private val percussion = PercussionSynth()
@@ -101,14 +102,18 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
+        // 노래 부르는 동안 터치가 없어도 화면이 꺼지지 않도록
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
-            .setNavigationOnClickListener { finish() }
+            .setNavigationOnClickListener { confirmExit() }
+        // 시스템 뒤로가기도 동일하게 — 스코어 모드 중도 이탈 실수 방지
+        onBackPressedDispatcher.addCallback(this) { confirmExit() }
 
         playerView = findViewById(R.id.playerView)
         tvSongTitle = findViewById(R.id.tvSongTitle)
-        tvScore = findViewById(R.id.tvScore)
-        tvJudgment = findViewById(R.id.tvJudgment)
         tvKeyLabel = findViewById(R.id.tvKeyLabel)
+        progressLoading = findViewById(R.id.progressLoading)
         btnKeyUp = findViewById(R.id.btnKeyUp)
         btnKeyDown = findViewById(R.id.btnKeyDown)
         btnPlayPause = findViewById(R.id.btnPlayPause)
@@ -122,6 +127,14 @@ class PlayerActivity : AppCompatActivity() {
 
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
+        // 재생 상태에 맞춰 재생/일시정지 아이콘 동기화
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                btnPlayPause.setImageResource(
+                    if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+                )
+            }
+        })
         scoringEngine = ScoringEngine()
         vocalPackageManager = VocalPackageManager(this)
         keyController = KeyController(player) { m -> scoringEngine.setKeyMultiplier(m) }
@@ -256,12 +269,10 @@ class PlayerActivity : AppCompatActivity() {
 
     /**
      * 모드별 UI:
-     * - SCORE: 진행 중 점수/판정 숨김(결과는 끝나고 다이얼로그), 탐색바·컨트롤 숨김(쭉 부르기)
-     * - PRACTICE: 점수/판정 숨김, 탐색바·컨트롤 표시(자유 연습)
+     * - SCORE: 탐색바·컨트롤 숨김(쭉 부르기, 점수는 곡 끝나고 다이얼로그)
+     * - PRACTICE: 탐색바·컨트롤 표시(자유 연습)
      */
     private fun applyModeVisibility() {
-        tvScore.visibility = View.GONE
-        tvJudgment.visibility = View.GONE
         val practice = mode == PlayerMode.PRACTICE
         layoutSeekbar.visibility = if (practice) View.VISIBLE else View.GONE
         layoutControls.visibility = if (practice) View.VISIBLE else View.GONE
@@ -269,6 +280,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun loadSong(vocalFile: File, title: String) {
         tvSongTitle.text = title
+        progressLoading.visibility = View.VISIBLE // 압축 해제 동안 로딩 표시
         lifecycleScope.launch {
             // 해싱/캐시 조회는 IO에서 (메인 스레드 디스크 I/O 방지)
             currentSongId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -286,6 +298,7 @@ class PlayerActivity : AppCompatActivity() {
                 finish()
                 return@launch
             }
+            progressLoading.visibility = View.GONE
             unpacked = data
             onSongChanged()
             startEngine(data)
@@ -327,7 +340,17 @@ class PlayerActivity : AppCompatActivity() {
         val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!micGranted) return
+        if (!micGranted) {
+            // 끝까지 부른 뒤 0점을 받지 않도록 미리 알림 (한 번만)
+            if (!micNoticeShown) {
+                micNoticeShown = true
+                android.widget.Toast.makeText(
+                    this, "마이크 권한이 없어 이번 곡은 채점되지 않습니다",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return
+        }
         // 점수/판정은 화면에 실시간 표시하지 않고 내부 누적만 (결과는 끝나고 표시)
         scoringEngine.start(targetPitches) { _, _, _, _, _ -> }
     }
@@ -373,7 +396,37 @@ class PlayerActivity : AppCompatActivity() {
             .setTitle("결과")
             .setMessage(msg)
             .setPositiveButton("확인") { _, _ -> finish() }
+            .setNegativeButton("다시 부르기") { _, _ -> restartSong() }
             .setCancelable(false)
+            .show()
+    }
+
+    /** 결과 확인 후 같은 곡을 처음부터 다시 (재도전). 이전 판 점수는 이미 기록됨. */
+    private fun restartSong() {
+        resultShown = false
+        scoringEngine.reset()
+        player.seekTo(0)
+        player.play()
+        if (mode == PlayerMode.SCORE) targetPitches?.let { startScoring(it) }
+    }
+
+    /**
+     * 나가기 처리. 스코어 모드로 부르는 중이면 실수 방지를 위해 한 번 확인.
+     * (연습 모드/결과 확인 후/재생 시작 전에는 바로 종료)
+     */
+    private fun confirmExit() {
+        if (mode != PlayerMode.SCORE || resultShown || !playbackStarted) {
+            finish()
+            return
+        }
+        val wasPlaying = player.isPlaying
+        player.pause()
+        AlertDialog.Builder(this)
+            .setTitle("그만 부를까요?")
+            .setMessage("지금 나가면 현재까지의 점수만 기록됩니다.")
+            .setPositiveButton("나가기") { _, _ -> finish() }
+            .setNegativeButton("계속 부르기") { _, _ -> if (wasPlaying) player.play() }
+            .setOnCancelListener { if (wasPlaying) player.play() }
             .show()
     }
 

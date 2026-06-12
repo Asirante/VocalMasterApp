@@ -27,8 +27,12 @@ class SongListAdapter(
         holder.sub.text = buildString {
             append(formatDuration(s.durationMs))
             append("  ·  평균키 ").append(formatKey(s.avgKeyHz))
-            append("  ·  부른 횟수 ").append(s.stat.playCount)
-            append("  ·  최고 ").append(s.stat.bestScore)
+            if (s.stat.playCount > 0) {
+                append("  ·  부른 횟수 ").append(s.stat.playCount)
+                append("  ·  최고 ").append(s.stat.bestScore)
+            } else {
+                append("  ·  기록 없음") // "최고 0"보다 자연스럽게
+            }
         }
         holder.star.visibility = if (s.stat.favorite) View.VISIBLE else View.GONE
         holder.itemView.setOnClickListener { onClick(s) }

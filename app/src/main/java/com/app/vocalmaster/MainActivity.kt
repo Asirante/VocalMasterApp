@@ -180,7 +180,14 @@ class MainActivity : AppCompatActivity() {
         }
         adapter.submit(list)
         if (list.isEmpty()) {
-            showEmpty(if (allSongs.isEmpty()) "이 폴더에 .vocal 파일이 없습니다." else "검색 결과가 없습니다.")
+            showEmpty(
+                when {
+                    allSongs.isEmpty() -> "이 폴더에 .vocal 파일이 없습니다."
+                    query.isNotEmpty() -> "검색 결과가 없습니다."
+                    showFavoritesOnly -> "즐겨찾기한 곡이 없습니다.\n곡을 눌러 ★를 켜 보세요."
+                    else -> "표시할 곡이 없습니다."
+                }
+            )
         } else {
             tvEmpty.visibility = View.GONE
             recycler.visibility = View.VISIBLE

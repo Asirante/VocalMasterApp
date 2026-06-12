@@ -71,8 +71,13 @@ class SongDetailSheet : BottomSheetDialogFragment() {
             tvInfo.text = buildString {
                 append("곡 길이: ").append(SongListAdapter.formatDuration(durMs)).append("\n")
                 append("평균 키: ").append(SongListAdapter.formatKey(keyHz)).append("\n")
-                append("부른 횟수: ${stat?.playCount ?: 0}\n")
-                append("최고 점수: ${stat?.bestScore ?: 0}")
+                val plays = stat?.playCount ?: 0
+                if (plays > 0) {
+                    append("부른 횟수: $plays\n")
+                    append("최고 점수: ${stat?.bestScore ?: 0}")
+                } else {
+                    append("아직 부른 기록이 없습니다")
+                }
             }
             updateFavIcon(btnFav, stat?.favorite == true)
         }
