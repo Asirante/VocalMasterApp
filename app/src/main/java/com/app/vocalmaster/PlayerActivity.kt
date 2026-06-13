@@ -207,7 +207,13 @@ class PlayerActivity : AppCompatActivity() {
 
         fun bind(btn: ToggleButton, inst: PercussionSynth.Instrument) {
             btn.setOnCheckedChangeListener { _, checked ->
-                if (checked) activeInstruments.add(inst) else activeInstruments.remove(inst)
+                if (checked) {
+                    activeInstruments.add(inst)
+                    // 켜는 즉시 미리듣기 한 번 — "흔들면 이 소리가 난다"를 바로 들려준다.
+                    percussion.play(inst, 0.7f)
+                } else {
+                    activeInstruments.remove(inst)
+                }
             }
         }
         bind(tambourine, PercussionSynth.Instrument.TAMBOURINE)
@@ -478,6 +484,7 @@ class PlayerActivity : AppCompatActivity() {
         handler.removeCallbacks(tick)
         playerView.player = null
         player.release()
+        percussion.release()
         unpacked?.let { vocalPackageManager.clearExtracted(it) }
     }
 

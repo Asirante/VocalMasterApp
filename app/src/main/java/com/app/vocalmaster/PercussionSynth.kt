@@ -4,8 +4,9 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.os.Handler
-import android.os.Looper
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
@@ -27,7 +28,14 @@ class PercussionSynth {
     enum class Instrument { TAMBOURINE, MARACA, COWBELL }
 
     private val sampleRate = 44100
-    private val releaseHandler = Handler(Looper.getMainLooper())
+
+    // 재생은 스트림 write가 블로킹하므로 메인(센서) 스레드가 아닌 워커에서 처리.
+    // 최대 4개까지 동시 재생하고, 그 이상 몰리면(마구 흔들 때) 큐에 쌓아 지연되게 두지 말고
+    // 그냥 버린다(DiscardPolicy) — 타악기는 즉시성이 중요하므로 밀린 소리는 의미 없음.
+    private val playbackPool = ThreadPoolExecutor(
+        0, 4, 1L, TimeUnit.SECONDS, SynchronousQueue(),
+        ThreadPoolExecutor.DiscardPolicy()
+    )
 
     /** 한 번 타격음 재생 (intensity 0~1). 짧은 1회성 사운드. */
     fun play(instrument: Instrument, intensity: Float) {
@@ -105,14 +113,24 @@ class PercussionSynth {
     }
 
     /**
-     * PCM 샘플을 일회성 AudioTrack으로 즉시 재생하고 끝나면 해제.
-     * 연속 흔들기로 트랙이 한꺼번에 많이 생기면 시스템 한도에 걸려 생성/재생이
-     * 실패할 수 있으므로, 그 경우 소리만 건너뛰고 크래시하지 않게 방어한다.
-     * 해제는 재생 길이에 맞춘 지연 해제로 보장한다 — MODE_STATIC의 마커 콜백은
-     * 일부 기기에서 발화하지 않아, 그것에 의존하면 트랙이 누수되어 32개 한도에
-     * 걸린 뒤로는 소리가 전혀 나지 않게 되기 때문.
+     * PCM 샘플을 일회성 AudioTrack(MODE_STREAM)으로 재생.
+     * MODE_STREAM은 play() 후 write()로 데이터를 밀어 넣는 방식이라 짧은 생성음에서
+     * MODE_STATIC보다 기기 호환성이 좋다. write가 블로킹하므로 워커 스레드에서 실행하고,
+     * 재생이 끝나면 stop/release로 확실히 정리한다. 트랙 생성/재생 실패 시에는
+     * 소리만 건너뛰고 크래시하지 않는다.
      */
     private fun playPcm(samples: ShortArray) {
+        // 워커가 모두 바쁘면(한꺼번에 너무 많이 흔든 경우) 이번 타격음은 조용히 건너뜀
+        try {
+            playbackPool.execute { renderOnce(samples) }
+        } catch (_: Exception) { /* 풀 포화/종료 — 무시 */ }
+    }
+
+    private fun renderOnce(samples: ShortArray) {
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        val bufBytes = max(samples.size * 2, if (minBuf > 0) minBuf else samples.size * 2)
         val track = try {
             AudioTrack(
                 AudioAttributes.Builder()
@@ -124,10 +142,8 @@ class PercussionSynth {
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build(),
-                max(samples.size * 2, AudioTrack.getMinBufferSize(
-                    sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
-                )),
-                AudioTrack.MODE_STATIC,
+                bufBytes,
+                AudioTrack.MODE_STREAM,
                 AudioManager.AUDIO_SESSION_ID_GENERATE
             )
         } catch (e: Exception) {
@@ -136,20 +152,33 @@ class PercussionSynth {
         }
         try {
             if (track.state != AudioTrack.STATE_INITIALIZED) {
+                android.util.Log.w("PercussionSynth", "AudioTrack 미초기화 (state=${track.state})")
                 track.release()
                 return
             }
-            track.write(samples, 0, samples.size)
             track.play()
-            // 재생 길이 + 여유(80ms) 뒤 확정 해제 (마커 콜백 미발화 기기 대비)
-            val durationMs = (samples.size * 1000L / sampleRate) + 80L
-            releaseHandler.postDelayed({
-                try { track.stop() } catch (_: Exception) {}
-                try { track.release() } catch (_: Exception) {}
-            }, durationMs)
+            var offset = 0
+            while (offset < samples.size) {
+                val written = track.write(samples, offset, samples.size - offset)
+                if (written <= 0) {
+                    android.util.Log.w("PercussionSynth", "write 실패 코드=$written")
+                    break
+                }
+                offset += written
+            }
+            // 버퍼에 남은 샘플이 모두 재생되도록 잠깐 대기 후 정리
+            val tailMs = (samples.size * 1000L / sampleRate) + 60L
+            try { Thread.sleep(tailMs) } catch (_: InterruptedException) {}
+            try { track.stop() } catch (_: Exception) {}
         } catch (e: Exception) {
             android.util.Log.w("PercussionSynth", "재생 실패", e)
+        } finally {
             try { track.release() } catch (_: Exception) {}
         }
+    }
+
+    /** 화면 종료 시 워커 풀 정리 */
+    fun release() {
+        runCatching { playbackPool.shutdown() }
     }
 }
