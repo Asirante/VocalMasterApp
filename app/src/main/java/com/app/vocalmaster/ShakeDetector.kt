@@ -49,9 +49,9 @@ class ShakeDetector(
             val now = System.currentTimeMillis()
             if (now - lastTriggerMs >= DEBOUNCE_MS) {
                 lastTriggerMs = now
-                // intensity: 임계값~상한 사이를 0~1로 정규화
-                val intensity = ((linear - threshold) / (MAX_ACCEL - threshold).coerceAtLeast(1f))
-                    .coerceIn(0f, 1f)
+                // intensity: 임계값을 넘은 정도를 고정 span(INTENSITY_SPAN)으로 정규화.
+                // 임계값이 레벨별로 크게 달라도 세기 체감이 일정하도록 한다.
+                val intensity = ((linear - threshold) / INTENSITY_SPAN).coerceIn(0f, 1f)
                 onShake(intensity)
             }
         }
@@ -62,7 +62,7 @@ class ShakeDetector(
     companion object {
         // m/s^2 (중력 제거 후 움직임 성분). 설정에서 조정 가능(SettingsManager.shakeThreshold).
         const val DEFAULT_THRESHOLD = 4f
-        private const val MAX_ACCEL = 16f       // 이 이상은 최대 세기로
+        private const val INTENSITY_SPAN = 10f  // 임계값보다 이만큼 더 세게 흔들면 최대 세기
         private const val DEBOUNCE_MS = 100L    // 연타 방지(타악기 반복은 허용)
     }
 }
