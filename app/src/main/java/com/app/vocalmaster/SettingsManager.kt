@@ -42,13 +42,13 @@ class SettingsManager(context: Context) {
     /** 흔들기 트리거 임계값(m/s²). 레벨이 높을수록 작은 흔들림에도 반응(낮은 임계값). */
     val shakeThreshold: Float
         get() = when (shakeLevel) {
-            1 -> 8f; 2 -> 6f; 3 -> 4f; 4 -> 2.5f; 5 -> 1.5f; else -> 4f
+            1 -> 16f; 2 -> 8f; 3 -> 4f; 4 -> 2.2f; 5 -> 1f; else -> 4f
         }
 
     /** 무대 효과가 켜지는 조도 상한(lux). 레벨이 높을수록 밝은 환경에서도 켜짐. */
     val darkLuxCeil: Float
         get() = when (lightLevel) {
-            1 -> 100f; 2 -> 150f; 3 -> 200f; 4 -> 280f; 5 -> 400f; else -> 200f
+            1 -> 60f; 2 -> 120f; 3 -> 200f; 4 -> 340f; 5 -> 550f; else -> 200f
         }
 
     companion object {
