@@ -29,10 +29,34 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_FLIP_TO_PAUSE, true)
         set(value) = prefs.edit().putBoolean(KEY_FLIP_TO_PAUSE, value).apply()
 
+    /** 흔들어 타악기 민감도 레벨 1(둔감)~5(민감). 기본 3. */
+    var shakeLevel: Int
+        get() = prefs.getInt(KEY_SHAKE_LEVEL, 3).coerceIn(1, 5)
+        set(value) = prefs.edit().putInt(KEY_SHAKE_LEVEL, value.coerceIn(1, 5)).apply()
+
+    /** 무대 조명(조도) 민감도 레벨 1(많이 어두워야)~5(조금만 어두워도). 기본 3. */
+    var lightLevel: Int
+        get() = prefs.getInt(KEY_LIGHT_LEVEL, 3).coerceIn(1, 5)
+        set(value) = prefs.edit().putInt(KEY_LIGHT_LEVEL, value.coerceIn(1, 5)).apply()
+
+    /** 흔들기 트리거 임계값(m/s²). 레벨이 높을수록 작은 흔들림에도 반응(낮은 임계값). */
+    val shakeThreshold: Float
+        get() = when (shakeLevel) {
+            1 -> 8f; 2 -> 6f; 3 -> 4f; 4 -> 2.5f; 5 -> 1.5f; else -> 4f
+        }
+
+    /** 무대 효과가 켜지는 조도 상한(lux). 레벨이 높을수록 밝은 환경에서도 켜짐. */
+    val darkLuxCeil: Float
+        get() = when (lightLevel) {
+            1 -> 100f; 2 -> 150f; 3 -> 200f; 4 -> 280f; 5 -> 400f; else -> 200f
+        }
+
     companion object {
         private const val KEY_FOLDER_PATH = "folder_path"
         private const val KEY_SORT_ORDER = "sort_order"
         private const val KEY_FLIP_TO_PAUSE = "flip_to_pause"
+        private const val KEY_SHAKE_LEVEL = "shake_level"
+        private const val KEY_LIGHT_LEVEL = "light_level"
 
         /** 기본 추천 경로: 내부 공용 저장소/VocalMaster */
         fun defaultFolder(): File =

@@ -13,6 +13,7 @@ import android.hardware.SensorManager
  */
 class LightSensorMonitor(
     context: Context,
+    private val darkLuxCeil: Float = DEFAULT_DARK_LUX_CEIL,
     private val onLight: (lux: Float, darkness: Float) -> Unit
 ) : SensorEventListener {
 
@@ -36,15 +37,16 @@ class LightSensorMonitor(
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_LIGHT) return
         val lux = event.values[0]
-        // 약 0~200 lux 구간을 어두움 정도로 매핑 (실내 조명 기준).
-        // 0 lux=완전 어두움(darkness 1), 200 lux 이상=충분히 밝음(darkness 0).
-        val darkness = (1f - (lux / DARK_LUX_CEIL)).coerceIn(0f, 1f)
+        // 0 lux=완전 어두움(darkness 1), darkLuxCeil 이상=충분히 밝음(darkness 0).
+        // darkLuxCeil은 설정에서 조정 가능(SettingsManager.darkLuxCeil).
+        val ceil = if (darkLuxCeil > 0f) darkLuxCeil else DEFAULT_DARK_LUX_CEIL
+        val darkness = (1f - (lux / ceil)).coerceIn(0f, 1f)
         onLight(lux, darkness)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     companion object {
-        private const val DARK_LUX_CEIL = 200f
+        const val DEFAULT_DARK_LUX_CEIL = 200f
     }
 }
