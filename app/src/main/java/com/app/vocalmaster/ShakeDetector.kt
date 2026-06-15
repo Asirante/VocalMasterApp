@@ -15,6 +15,7 @@ import kotlin.math.sqrt
  */
 class ShakeDetector(
     context: Context,
+    private val threshold: Float = DEFAULT_THRESHOLD,
     private val onShake: (intensity: Float) -> Unit
 ) : SensorEventListener {
 
@@ -44,12 +45,12 @@ class ShakeDetector(
         val magnitude = sqrt(gx * gx + gy * gy + gz * gz)
         val linear = kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH)
 
-        if (linear > SHAKE_THRESHOLD) {
+        if (linear > threshold) {
             val now = System.currentTimeMillis()
             if (now - lastTriggerMs >= DEBOUNCE_MS) {
                 lastTriggerMs = now
                 // intensity: 임계값~상한 사이를 0~1로 정규화
-                val intensity = ((linear - SHAKE_THRESHOLD) / (MAX_ACCEL - SHAKE_THRESHOLD))
+                val intensity = ((linear - threshold) / (MAX_ACCEL - threshold).coerceAtLeast(1f))
                     .coerceIn(0f, 1f)
                 onShake(intensity)
             }
@@ -59,9 +60,8 @@ class ShakeDetector(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     companion object {
-        // m/s^2 (중력 제거 후 움직임 성분). 탬버린처럼 손목으로 가볍게 흔드는
-        // 동작(≈1.4g 전후)에도 반응하도록 낮춘다. 가만히 들고 있을 때(≈0)는 트리거되지 않음.
-        private const val SHAKE_THRESHOLD = 4f
+        // m/s^2 (중력 제거 후 움직임 성분). 설정에서 조정 가능(SettingsManager.shakeThreshold).
+        const val DEFAULT_THRESHOLD = 4f
         private const val MAX_ACCEL = 16f       // 이 이상은 최대 세기로
         private const val DEBOUNCE_MS = 100L    // 연타 방지(타악기 반복은 허용)
     }

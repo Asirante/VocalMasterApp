@@ -221,7 +221,8 @@ class PlayerActivity : AppCompatActivity() {
         bind(cowbell, PercussionSynth.Instrument.COWBELL)
 
         // 흔들면 켜진 악기를 세기(intensity)에 맞춰 동시 재생 + 무대 글로우 번쩍임
-        shakeDetector = ShakeDetector(this) { intensity ->
+        // 임계값은 설정(흔들기 민감도)에서 가져온다.
+        shakeDetector = ShakeDetector(this, settings.shakeThreshold) { intensity ->
             if (currentDarkness > 0.15f) pulseGlow(intensity)
             if (activeInstruments.isEmpty()) return@ShakeDetector
             for (inst in activeInstruments) {
@@ -235,22 +236,31 @@ class PlayerActivity : AppCompatActivity() {
     /** 조도 센서 → 어두우면 화면 밝기 ↑ + 무대 글로우 표시 */
     private fun setupStageEffect() {
         stageGlow = findViewById(R.id.stageGlow)
-        lightMonitor = LightSensorMonitor(this) { _, darkness ->
+        // 조도 민감도(무대 효과가 켜지는 밝기)도 설정에서 가져온다.
+        lightMonitor = LightSensorMonitor(this, settings.darkLuxCeil) { _, darkness ->
             currentDarkness = darkness
             applyStageEffect(darkness)
         }
     }
 
+    private var lastBrightness = Float.NaN
+
     private fun applyStageEffect(darkness: Float) {
-        // 1) 화면 밝기: 어두울수록 밝게 (교수님 요청). 0.5~1.0 범위로.
+        // 1) 화면 밝기: 어두울수록 밝게. 0.5~1.0 범위로.
         //    밝은 환경에서는 강제하지 않고 시스템/사용자 설정에 맡긴다.
-        val lp = window.attributes
-        lp.screenBrightness = if (darkness > 0.15f) {
+        //    조도 콜백(~5Hz)마다 window.attributes를 갈아끼우면 매번 relayout이 발생하므로,
+        //    밝기가 실제로 바뀔 때만(±0.02 초과) 적용한다.
+        val target = if (darkness > 0.15f) {
             (0.5f + 0.5f * darkness).coerceIn(0.5f, 1f)
         } else {
             android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
-        window.attributes = lp
+        if (lastBrightness.isNaN() || kotlin.math.abs(target - lastBrightness) > 0.02f) {
+            lastBrightness = target
+            val lp = window.attributes
+            lp.screenBrightness = target
+            window.attributes = lp
+        }
 
         // 2) 무대 글로우: 어두우면 은은하게 켜둠(베이스 알파), 밝으면 끔
         if (darkness > 0.15f) {
@@ -477,10 +487,8 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 결과를 표시하지 않고 빠져나간 경우(중도 이탈)에도 스코어 모드면 기록
-        if (mode == PlayerMode.SCORE && !resultShown) {
-            currentSongId?.let { statsStore.recordPlay(it, scoringEngine.getResult().avgScore) }
-        }
+        // 부른 횟수/점수는 '결과 화면(showResult)'이 표시될 때만 기록한다.
+        // 결과를 보지 못하고 중간에 나간 경우에는 기록하지 않음.
         handler.removeCallbacks(tick)
         playerView.player = null
         player.release()

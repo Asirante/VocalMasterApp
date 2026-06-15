@@ -30,6 +30,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private val sortOptions = SortOrder.entries.toList()
 
+    // 민감도 테스트용 (설정 화면에서만 잠깐 동작)
+    private val percussion = PercussionSynth()
+    private var testShake: ShakeDetector? = null
+    private var testLight: LightSensorMonitor? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -87,6 +92,19 @@ class SettingsActivity : AppCompatActivity() {
             settings.flipToPause = checked
         }
 
+        // 센서 민감도 (가속도계 흔들기 / 조도) — 변경 즉시 저장.
+        // 테스트 중이면 변경된 임계값으로 즉시 재시작해 바로 체감할 수 있게 한다.
+        setupSensitivity(
+            findViewById(R.id.seekShake), findViewById(R.id.tvShakeLabel),
+            "흔들어 타악기 민감도", settings.shakeLevel
+        ) { settings.shakeLevel = it; if (testShake != null) startShakeTest() }
+        setupSensitivity(
+            findViewById(R.id.seekLight), findViewById(R.id.tvLightLabel),
+            "무대 조명 민감도", settings.lightLevel
+        ) { settings.lightLevel = it; if (testLight != null) startLightTest() }
+
+        setupSensorTests()
+
         // 연습 환경 (온도/습도 → 보컬 컨디션)
         tvEnvValues = findViewById(R.id.tvEnvValues)
         tvEnvAdvice = findViewById(R.id.tvEnvAdvice)
@@ -124,6 +142,92 @@ class SettingsActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         envMonitor.stop()
+        // 화면을 벗어나면 테스트 센서도 정리 (버튼 상태 원복)
+        if (testShake != null) { stopShakeTest(); findViewById<Button>(R.id.btnShakeTest).text = "흔들어 테스트" }
+        if (testLight != null) { stopLightTest(); findViewById<Button>(R.id.btnLightTest).text = "조도 테스트" }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        percussion.release()
+    }
+
+    /** 흔들기/조도 테스트 버튼 연결 */
+    private fun setupSensorTests() {
+        val btnShake = findViewById<Button>(R.id.btnShakeTest)
+        btnShake.setOnClickListener {
+            if (testShake == null) { startShakeTest(); btnShake.text = "테스트 중지" }
+            else { stopShakeTest(); btnShake.text = "흔들어 테스트" }
+        }
+        val btnLight = findViewById<Button>(R.id.btnLightTest)
+        btnLight.setOnClickListener {
+            if (testLight == null) { startLightTest(); btnLight.text = "테스트 중지" }
+            else { stopLightTest(); btnLight.text = "조도 테스트" }
+        }
+    }
+
+    private val shakeIdleText get() = "📳 폰을 흔들어 보세요 (민감도 ${settings.shakeLevel}/5)"
+    private val shakeResetRunnable = Runnable {
+        if (testShake != null) findViewById<TextView>(R.id.tvShakeTest).text = shakeIdleText
+    }
+
+    /** 현재 흔들기 민감도로 테스트 감지기 시작(또는 재시작) */
+    private fun startShakeTest() {
+        testShake?.stop()
+        val tv = findViewById<TextView>(R.id.tvShakeTest)
+        tv.text = shakeIdleText
+        testShake = ShakeDetector(this, settings.shakeThreshold) { intensity ->
+            // 감지되면 탬버린 소리 + 시각 피드백 (잠시 후 안내 문구로 복귀)
+            percussion.play(PercussionSynth.Instrument.TAMBOURINE, intensity)
+            tv.text = "🔔 감지됨! (세기 ${(intensity * 100).toInt()}%)"
+            tv.removeCallbacks(shakeResetRunnable)
+            tv.postDelayed(shakeResetRunnable, 700)
+        }.also { it.start() }
+    }
+
+    private fun stopShakeTest() {
+        testShake?.stop(); testShake = null
+        val tv = findViewById<TextView>(R.id.tvShakeTest)
+        tv.removeCallbacks(shakeResetRunnable)
+        tv.text = ""
+    }
+
+    /** 현재 조도 민감도로 측정 시작(또는 재시작) — 실시간 lux + 무대 효과 on/off 표시 */
+    private fun startLightTest() {
+        testLight?.stop()
+        val tv = findViewById<TextView>(R.id.tvLightTest)
+        tv.text = "조도 측정 중…"
+        testLight = LightSensorMonitor(this, settings.darkLuxCeil) { lux, darkness ->
+            val on = darkness > 0.15f
+            tv.text = "현재 ${lux.toInt()} lux · 무대 효과 ${if (on) "● 켜짐" else "○ 꺼짐"}"
+        }.also { it.start() }
+    }
+
+    private fun stopLightTest() {
+        testLight?.stop(); testLight = null
+        findViewById<TextView>(R.id.tvLightTest).text = ""
+    }
+
+    /** 1~5 민감도 SeekBar 구성: 라벨 표시 + 변경 시 저장 콜백 */
+    private fun setupSensitivity(
+        seek: android.widget.SeekBar,
+        label: TextView,
+        title: String,
+        initial: Int,
+        onChange: (Int) -> Unit
+    ) {
+        fun render(level: Int) { label.text = "$title: $level / 5" }
+        seek.progress = initial
+        render(initial)
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                val level = value.coerceIn(1, 5)
+                render(level)
+                if (fromUser) onChange(level)
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
     }
 
     /** 온도/습도 값 표시 + 성대 컨디션 안내 갱신 */

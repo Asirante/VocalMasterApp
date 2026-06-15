@@ -111,16 +111,15 @@ class VocalPackageManager(private val context: Context) {
 
             val songs = files.mapNotNull { f ->
                 try {
-                    val songId = songIdOf(f)
-                    val (duration, avgKey) = readMetaJson(f)
+                    val info = infoOf(f) // id + meta(길이/키) 한 번에 (캐시 적중 시 zip 안 엶)
                     VocalSong(
                         file = f,
-                        songId = songId,
+                        songId = info.id,
                         meta = SongMeta.parseFromFileName(f.name),
-                        durationMs = duration,
-                        avgKeyHz = avgKey,
+                        durationMs = info.durationMs,
+                        avgKeyHz = info.avgKeyHz,
                         lastModified = f.lastModified(),
-                        stat = stats[songId] ?: SongStat(songId)
+                        stat = stats[info.id] ?: SongStat(info.id)
                     )
                 } catch (e: Exception) {
                     android.util.Log.e("VocalPackageManager", "곡 읽기 실패: ${f.name}", e)
@@ -130,21 +129,31 @@ class VocalPackageManager(private val context: Context) {
             sortSongs(songs, sortOrder)
         }
 
+    /** 캐시된 곡 정보 (해시 ID + meta.json의 길이/평균 키) */
+    data class SongInfo(val id: String, val durationMs: Long?, val avgKeyHz: Float?)
+
     /**
-     * songId 조회 (캐시 우선). 파일 크기/수정시각이 바뀌었으면 다시 해싱.
-     * 비디오 전체 해싱은 비싸므로 IO 스레드에서 호출할 것.
+     * 곡 정보 조회 (캐시 우선). 파일 크기/수정시각이 바뀌었으면 다시 해싱 + meta 읽기.
+     * 비디오 전체 해싱과 zip 열기는 비싸므로 IO 스레드에서 호출할 것.
+     * 캐시 값 형식: "size:mtime|id|durMs|keyHz" (durMs/keyHz의 '-'는 null)
      */
-    fun songIdOf(f: File): String {
+    fun infoOf(f: File): SongInfo {
         val key = f.absolutePath
         val sig = "${f.length()}:${f.lastModified()}"
         idCache.getString(key, null)?.let { cached ->
-            val sep = cached.lastIndexOf('|')
-            if (sep > 0 && cached.substring(0, sep) == sig) return cached.substring(sep + 1)
+            val parts = cached.split('|')
+            if (parts.size >= 4 && parts[0] == sig) {
+                return SongInfo(parts[1], parts[2].toLongOrNull(), parts[3].toFloatOrNull())
+            }
         }
         val id = computeSongId(f)
-        idCache.edit().putString(key, "$sig|$id").apply()
-        return id
+        val (dur, keyHz) = readMeta(f)
+        idCache.edit().putString(key, "$sig|$id|${dur ?: "-"}|${keyHz ?: "-"}").apply()
+        return SongInfo(id, dur, keyHz)
     }
+
+    /** songId만 필요한 곳(상세 시트/가져오기)을 위한 단축 메서드. */
+    fun songIdOf(f: File): String = infoOf(f).id
 
     /** 더 이상 존재하지 않는 파일의 캐시 항목 제거 */
     private fun pruneIdCache() {
@@ -159,9 +168,6 @@ class VocalPackageManager(private val context: Context) {
         SortOrder.DATE_DESC -> songs.sortedByDescending { it.lastModified }
         SortOrder.DATE_ASC -> songs.sortedBy { it.lastModified }
     }
-
-    /** meta.json이 있으면 duration/avgKey 읽기 (없으면 null,null) */
-    private fun readMetaJson(vocalFile: File): Pair<Long?, Float?> = readMeta(vocalFile)
 
     /**
      * 재생 전 캐시 폴더에 압축 해제.
